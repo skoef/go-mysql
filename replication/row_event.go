@@ -20,42 +20,46 @@ import (
 var errMissingTableMapEvent = errors.New("invalid table id, no corresponding table map event")
 
 type TableMapEvent struct {
-	flavor      string
-	tableIDSize int
+	/*
+	   The some fields are available only after MySQL-8.0.1 or MariaDB-10.5.0
+	   By default MySQL and MariaDB do not log the full row metadata.
+	   see:
+	           - https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_metadata
+	           - https://mariadb.com/kb/en/replication-and-binary-log-system-variables/#binlog_row_metadata
+	*/
 
-	TableID uint64
+	flavor string
+	// ColumnCharset stores collation info for character columns.
+	// ColumnCharset contains collation sequence for all character columns
+	ColumnCharset    []uint64
+	PrimaryKeyPrefix []uint64
 
-	Flags uint16
+	// PrimaryKey is a sequence of column indexes of primary key.
+	PrimaryKey []uint64
 
 	Schema []byte
 	Table  []byte
 
-	ColumnCount uint64
-	ColumnType  []byte
-	ColumnMeta  []uint16
+	// GeometryType stores real type for geometry columns.
+	GeometryType []uint64
+
+	ColumnType []byte
+	ColumnMeta []uint16
 
 	//len = (ColumnCount + 7) / 8
 	NullBitmap []byte
 
-	/*
-		The following are available only after MySQL-8.0.1 or MariaDB-10.5.0
-		By default MySQL and MariaDB do not log the full row metadata.
-		see:
-			- https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_metadata
-			- https://mariadb.com/kb/en/replication-and-binary-log-system-variables/#binlog_row_metadata
-	*/
-
 	// SignednessBitmap stores signedness info for numeric columns.
 	SignednessBitmap []byte
 
-	// DefaultCharset/ColumnCharset stores collation info for character columns.
-
+	// DefaultCharset stores collation info for character columns.
 	// DefaultCharset[0] is the default collation of character columns.
 	// For character columns that have different charset,
 	// (character column index, column collation) pairs follows
 	DefaultCharset []uint64
-	// ColumnCharset contains collation sequence for all character columns
-	ColumnCharset []uint64
+
+	// EnumSetDefaultCharset is similar to DefaultCharset but for enum/set columns.
+	EnumSetDefaultCharset []uint64
 
 	// SetStrValue stores values for set columns.
 	SetStrValue       [][][]byte
@@ -69,19 +73,12 @@ type TableMapEvent struct {
 	ColumnName       [][]byte
 	columnNameString []string // the same as ColumnName in string type, just for reuse
 
-	// GeometryType stores real type for geometry columns.
-	GeometryType []uint64
-
-	// PrimaryKey is a sequence of column indexes of primary key.
-	PrimaryKey []uint64
-
-	// PrimaryKeyPrefix is the prefix length used for each column of primary key.
-	// 0 means that the whole column length is used.
-	PrimaryKeyPrefix []uint64
-
-	// EnumSetDefaultCharset/EnumSetColumnCharset is similar to DefaultCharset/ColumnCharset but for enum/set columns.
-	EnumSetDefaultCharset []uint64
-	EnumSetColumnCharset  []uint64
+	// EnumSetColumnCharset is similar to ColumnCharset but for enum/set columns.
+	EnumSetColumnCharset []uint64
+	TableID              uint64
+	tableIDSize          int
+	ColumnCount          uint64
+	Flags                uint16
 }
 
 func (e *TableMapEvent) Decode(data []byte) error {
@@ -812,33 +809,26 @@ func (e *TableMapEvent) IsEnumOrSetColumn(i int) bool {
 const RowsEventStmtEndFlag = 0x01
 
 type RowsEvent struct {
-	//0, 1, 2
-	Version int
+	tables                  map[uint64]*TableMapEvent
+	timestampStringLocation *time.Location
+	Table                   *TableMapEvent
 
-	tableIDSize int
-	tables      map[uint64]*TableMapEvent
-	needBitmap2 bool
-
-	Table *TableMapEvent
-
-	TableID uint64
-
-	Flags uint16
+	//rows: invalid: int64, float64, bool, []byte, string
+	Rows [][]interface{}
 
 	//if version == 2
 	ExtraData []byte
 
-	//lenenc_int
-	ColumnCount uint64
-
 	/*
-		By default MySQL and MariaDB log the full row image.
-		see
-			- https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_image
-			- https://mariadb.com/kb/en/replication-and-binary-log-system-variables/#binlog_row_image
+	   By default MySQL and MariaDB log the full row image.
+	   see
+	           - https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_image
+	           - https://mariadb.com/kb/en/replication-and-binary-log-system-variables/#binlog_row_image
 
-		ColumnBitmap1, ColumnBitmap2 and SkippedColumns are not set on the full row image.
+	   SkippedColumns and ColumnBitmap1, ColumnBitmap2 are not set on the full row image.
 	*/
+
+	SkippedColumns [][]int
 
 	//len = (ColumnCount + 7) / 8
 	ColumnBitmap1 []byte
@@ -846,15 +836,20 @@ type RowsEvent struct {
 	//if UPDATE_ROWS_EVENTv1 or v2
 	//len = (ColumnCount + 7) / 8
 	ColumnBitmap2 []byte
+	TableID       uint64
+	tableIDSize   int
 
-	//rows: invalid: int64, float64, bool, []byte, string
-	Rows           [][]interface{}
-	SkippedColumns [][]int
+	//lenenc_int
+	ColumnCount uint64
 
-	parseTime               bool
-	timestampStringLocation *time.Location
-	useDecimal              bool
-	ignoreJSONDecodeErr     bool
+	//0, 1, 2
+	Version int
+
+	Flags               uint16
+	parseTime           bool
+	needBitmap2         bool
+	useDecimal          bool
+	ignoreJSONDecodeErr bool
 }
 
 func (e *RowsEvent) Decode(data []byte) (err2 error) {

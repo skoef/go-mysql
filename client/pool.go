@@ -27,21 +27,21 @@ type (
 	LogFunc func(format string, args ...interface{})
 
 	Pool struct {
-		logFunc          LogFunc
-		minAlive         int
-		maxAlive         int
+		logFunc         LogFunc
+		readyConnection chan Connection
+		connect         func() (*Conn, error)
+
+		synchro struct {
+			idleConnections []Connection
+			sync.Mutex
+			stats ConnectionStats
+		}
+
 		maxIdle          int
 		idleCloseTimeout Timestamp
 		idlePingTimeout  Timestamp
-		connect          func() (*Conn, error)
-
-		synchro struct {
-			sync.Mutex
-			idleConnections []Connection
-			stats           ConnectionStats
-		}
-
-		readyConnection chan Connection
+		minAlive         int
+		maxAlive         int
 	}
 
 	ConnectionStats struct {

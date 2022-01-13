@@ -24,40 +24,11 @@ var (
 
 // BinlogSyncerConfig is the configuration for BinlogSyncer.
 type BinlogSyncerConfig struct {
-	// ServerID is the unique ID in cluster.
-	ServerID uint32
-	// Flavor is "mysql" or "mariadb", if not set, use "mysql" default.
-	Flavor string
-
-	// Host is for MySQL server host.
-	Host string
-	// Port is for MySQL server port.
-	Port uint16
-	// User is for MySQL user.
-	User string
-	// Password is for MySQL password.
-	Password string
-
-	// Localhost is local hostname if register salve.
-	// If not set, use os.Hostname() instead.
-	Localhost string
-
-	// Charset is for MySQL client character set
-	Charset string
-
-	// SemiSyncEnabled enables semi-sync or not.
-	SemiSyncEnabled bool
-
-	// RawModeEnabled is for not parsing binlog event.
-	RawModeEnabled bool
-
+	//Option function is used to set outside of BinlogSyncerConfig， between mysql connection and COM_REGISTER_SLAVE
+	//For MariaDB: slave_gtid_ignore_duplicates、skip_replication、slave_until_gtid
+	Option func(*client.Conn) error
 	// If not nil, use the provided tls.Config to connect to the database using TLS/SSL.
 	TLSConfig *tls.Config
-
-	// Use replication.Time structure for timestamp and datetime.
-	// We will use Local location for timestamp and UTC location for datatime.
-	ParseTime bool
-
 	// If ParseTime is false, convert TIMESTAMP into this specified timezone. If
 	// ParseTime is true, this option will have no effect and TIMESTAMP data will
 	// be parsed into the local timezone and a full time.Time struct will be
@@ -71,33 +42,30 @@ type BinlogSyncerConfig struct {
 	// Setting this to UTC effectively equalizes the TIMESTAMP and DATETIME time
 	// strings obtained from MySQL.
 	TimestampStringLocation *time.Location
-
-	// Use decimal.Decimal structure for decimals.
-	UseDecimal bool
-
-	// RecvBufferSize sets the size in bytes of the operating system's receive buffer associated with the connection.
-	RecvBufferSize int
-
+	// Localhost is local hostname if register salve.
+	// If not set, use os.Hostname() instead.
+	Localhost string
+	// User is for MySQL user.
+	User string
+	// Password is for MySQL password.
+	Password string
+	// Host is for MySQL server host.
+	Host string
+	// Charset is for MySQL client character set
+	Charset string
+	// Flavor is "mysql" or "mariadb", if not set, use "mysql" default.
+	Flavor string
 	// master heartbeat period
 	HeartbeatPeriod time.Duration
-
 	// read timeout
 	ReadTimeout time.Duration
-
 	// maximum number of attempts to re-establish a broken connection, zero or negative number means infinite retry.
 	// this configuration will not work if DisableRetrySync is true
 	MaxReconnectAttempts int
-
-	// whether disable re-sync for broken connection
-	DisableRetrySync bool
-
-	// Only works when MySQL/MariaDB variable binlog_checksum=CRC32.
-	// For MySQL, binlog_checksum was introduced since 5.6.2, but CRC32 was set as default value since 5.6.6 .
-	// https://dev.mysql.com/doc/refman/5.6/en/replication-options-binary-log.html#option_mysqld_binlog-checksum
-	// For MariaDB, binlog_checksum was introduced since MariaDB 5.3, but CRC32 was set as default value since MariaDB 10.2.1 .
-	// https://mariadb.com/kb/en/library/replication-and-binary-log-server-system-variables/#binlog_checksum
-	VerifyChecksum bool
-
+	// RecvBufferSize sets the size in bytes of the operating system's receive buffer associated with the connection.
+	RecvBufferSize int
+	// ServerID is the unique ID in cluster.
+	ServerID uint32
 	// DumpCommandFlag is used to send binglog dump command. Default 0, aka BINLOG_DUMP_NEVER_STOP.
 	// For MySQL, BINLOG_DUMP_NEVER_STOP and BINLOG_DUMP_NON_BLOCK are available.
 	// https://dev.mysql.com/doc/internals/en/com-binlog-dump.html#binlog-dump-non-block
@@ -105,36 +73,42 @@ type BinlogSyncerConfig struct {
 	// https://mariadb.com/kb/en/library/com_binlog_dump/
 	// https://mariadb.com/kb/en/library/annotate_rows_event/
 	DumpCommandFlag uint16
-
-	//Option function is used to set outside of BinlogSyncerConfig， between mysql connection and COM_REGISTER_SLAVE
-	//For MariaDB: slave_gtid_ignore_duplicates、skip_replication、slave_until_gtid
-	Option func(*client.Conn) error
+	// Port is for MySQL server port.
+	Port uint16
+	// RawModeEnabled is for not parsing binlog event.
+	RawModeEnabled bool
+	// SemiSyncEnabled enables semi-sync or not.
+	SemiSyncEnabled bool
+	// whether disable re-sync for broken connection
+	DisableRetrySync bool
+	// Only works when MySQL/MariaDB variable binlog_checksum=CRC32.
+	// For MySQL, binlog_checksum was introduced since 5.6.2, but CRC32 was set as default value since 5.6.6 .
+	// https://dev.mysql.com/doc/refman/5.6/en/replication-options-binary-log.html#option_mysqld_binlog-checksum
+	// For MariaDB, binlog_checksum was introduced since MariaDB 5.3, but CRC32 was set as default value since MariaDB 10.2.1 .
+	// https://mariadb.com/kb/en/library/replication-and-binary-log-server-system-variables/#binlog_checksum
+	VerifyChecksum bool
+	// Use decimal.Decimal structure for decimals.
+	UseDecimal bool
+	// Use replication.Time structure for timestamp and datetime.
+	// We will use Local location for timestamp and UTC location for datatime.
+	ParseTime bool
 }
 
 // BinlogSyncer syncs binlog event from server.
 type BinlogSyncer struct {
-	m sync.RWMutex
-
-	cfg BinlogSyncerConfig
-
-	c *client.Conn
-
-	wg sync.WaitGroup
-
-	parser *BinlogParser
-
-	nextPos Position
-
-	prevGset, currGset GTIDSet
-
-	running bool
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
+	ctx              context.Context
+	currGset         GTIDSet
+	prevGset         GTIDSet
+	c                *client.Conn
+	cancel           context.CancelFunc
+	parser           *BinlogParser
+	nextPos          Position
+	cfg              BinlogSyncerConfig
+	retryCount       int
+	m                sync.RWMutex
+	wg               sync.WaitGroup
 	lastConnectionID uint32
-
-	retryCount int
+	running          bool
 }
 
 // NewBinlogSyncer creates the BinlogSyncer with cfg.

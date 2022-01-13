@@ -27,12 +27,10 @@ func TestBinLogSyncer(t *testing.T) {
 }
 
 type testSyncerSuite struct {
-	b *BinlogSyncer
-	c *client.Conn
-
-	wg sync.WaitGroup
-
+	b      *BinlogSyncer
+	c      *client.Conn
 	flavor string
+	wg     sync.WaitGroup
 }
 
 var _ = Suite(&testSyncerSuite{})

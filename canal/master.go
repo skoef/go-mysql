@@ -8,11 +8,11 @@ import (
 )
 
 type masterInfo struct {
-	sync.RWMutex
+	gset mysql.GTIDSet
 
 	pos mysql.Position
 
-	gset mysql.GTIDSet
+	sync.RWMutex
 
 	timestamp uint32
 }

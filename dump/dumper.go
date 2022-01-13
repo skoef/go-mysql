@@ -15,31 +15,27 @@ import (
 
 // Unlick mysqldump, Dumper is designed for parsing and syning data easily.
 type Dumper struct {
+	ErrOut       io.Writer
+	IgnoreTables map[string][]string
+	Charset      string
+	User         string
+	Password     string
+	Protocol     string
+	TableDB      string
+	Addr         string
+	Where        string
+
 	// mysqldump execution path, like mysqldump or /usr/bin/mysqldump, etc...
 	ExecutionPath string
 
-	Addr     string
-	User     string
-	Password string
-	Protocol string
-
-	// Will override Databases
-	Tables  []string
-	TableDB string
-
-	Databases []string
-
-	Where   string
-	Charset string
-
-	IgnoreTables map[string][]string
-
+	Databases    []string
 	ExtraOptions []string
 
-	ErrOut io.Writer
+	// Will override Databases
+	Tables []string
 
-	masterDataSkipped bool
 	maxAllowedPacket  int
+	masterDataSkipped bool
 	hexBlob           bool
 
 	// see detectColumnStatisticsParamSupported
